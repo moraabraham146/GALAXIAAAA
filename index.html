@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>¡Feliz Cumpleaños Papá!</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: Arial, sans-serif;
+        }
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        #title {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #00ffff;
+            font-size: 3rem;
+            text-align: center;
+            text-shadow: 0 0 10px #00ffff, 0 0 20px #00ffff, 0 0 30px #00ffff;
+            z-index: 10;
+            pointer-events: none;
+        }
+        @media (max-width: 768px) {
+            #title {
+                font-size: 2rem;
+            }
+        }
+        #video {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="title">¡Feliz Cumpleaños Papá!</div>
+    <canvas id="canvas"></canvas>
+    <video id="video" autoplay playsinline></video>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3/drawing_utils.js"></script>
+
+    <script>
+        // Three.js setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(0x000000);
+
+        // Particles
+        const particleCount = 5000;
+        const positions = new Float32Array(particleCount * 3);
+        const origins = new Float32Array(particleCount * 3);
+        const targets = new Float32Array(particleCount * 3);
+
+        // Initialize origins randomly
+        for (let i = 0; i < particleCount; i++) {
+            origins[i * 3] = (Math.random() - 0.5) * 100;
+            origins[i * 3 + 1] = (Math.random() - 0.5) * 100;
+            origins[i * 3 + 2] = (Math.random() - 0.5) * 100;
+            positions[i * 3] = origins[i * 3];
+            positions[i * 3 + 1] = origins[i * 3 + 1];
+            positions[i * 3 + 2] = origins[i * 3 + 2];
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+        const material = new THREE.PointsMaterial({ color: 0xaaccff, size: 0.5 });
+        const points = new THREE.Points(geometry, material);
+        scene.add(points);
+
+        camera.position.z = 50;
+
+        // Gesture states
+        let currentGesture = 'idle'; // 'idle', 'heart', 'papa'
+
+        // Define heart shape positions
+        const heartPositions = [];
+        for (let i = 0; i < particleCount; i++) {
+            const t = (i / particleCount) * Math.PI * 2;
+            const x = 16 * Math.pow(Math.sin(t), 3);
+            const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+            heartPositions.push(x, y, 0);
+        }
+
+        // Define 'PAPÁ' positions (simplified)
+        const papaPositions = [];
+        const letters = [
+            // P
+            [0,0,0], [0,1,0], [0,2,0], [0,3,0], [1,3,0], [2,3,0], [2,2,0], [1,2,0],
+            // A
+            [4,0,0], [4,1,0], [4,2,0], [4,3,0], [5,3,0], [6,3,0], [5,2,0], [5,1,0],
+            // P
+            [8,0,0], [8,1,0], [8,2,0], [8,3,0], [9,3,0], [10,3,0], [10,2,0], [9,2,0],
+            // Á
+            [12,0,0], [12,1,0], [12,2,0], [12,3,0], [13,3,0], [14,3,0], [13,2,0], [13,1,0]
+        ];
+        // Scale and distribute particles
+        const letterParticles = Math.floor(particleCount / letters.length);
+        for (let i = 0; i < letters.length; i++) {
+            for (let j = 0; j < letterParticles; j++) {
+                const offsetX = (Math.random() - 0.5) * 0.5;
+                const offsetY = (Math.random() - 0.5) * 0.5;
+                papaPositions.push(letters[i][0] * 2 + offsetX, letters[i][1] * 2 + offsetY, 0);
+            }
+        }
+        // Fill remaining with random
+        while (papaPositions.length < particleCount * 3) {
+            papaPositions.push((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20, 0);
+        }
+
+        // MediaPipe Hands setup
+        const videoElement = document.getElementById('video');
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/${file}`
+        });
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        hands.onResults((results) => {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                // Simple gesture detection
+                const thumbTip = landmarks[4];
+                const indexTip = landmarks[8];
+                const middleTip = landmarks[12];
+                const ringTip = landmarks[16];
+                const pinkyTip = landmarks[20];
+                const palm = landmarks[0];
+
+                // Check if fist (all fingers below palm)
+                const isFist = thumbTip.y > palm.y && indexTip.y > palm.y && middleTip.y > palm.y && ringTip.y > palm.y && pinkyTip.y > palm.y;
+                // Check if open hand (all fingers above palm)
+                const isOpen = thumbTip.y < palm.y && indexTip.y < palm.y && middleTip.y < palm.y && ringTip.y < palm.y && pinkyTip.y < palm.y;
+
+                if (isFist) {
+                    currentGesture = 'heart';
+                } else if (isOpen) {
+                    currentGesture = 'papa';
+                } else {
+                    currentGesture = 'idle';
+                }
+            } else {
+                currentGesture = 'idle';
+            }
+        });
+
+        const cameraUtils = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({ image: videoElement });
+            },
+            width: 640,
+            height: 480
+        });
+
+        // Request camera permission
+        navigator.mediaDevices.getUserMedia({ video: true }).then((stream) => {
+            videoElement.srcObject = stream;
+            cameraUtils.start();
+        }).catch((err) => {
+            console.error('Error accessing camera:', err);
+        });
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const positionsArray = geometry.attributes.position.array;
+
+            for (let i = 0; i < particleCount; i++) {
+                const idx = i * 3;
+                let targetX, targetY, targetZ;
+
+                if (currentGesture === 'heart') {
+                    targetX = heartPositions[idx];
+                    targetY = heartPositions[idx + 1];
+                    targetZ = heartPositions[idx + 2];
+                } else if (currentGesture === 'papa') {
+                    targetX = papaPositions[idx];
+                    targetY = papaPositions[idx + 1];
+                    targetZ = papaPositions[idx + 2];
+                } else {
+                    // Idle: random movement
+                    targetX = origins[idx] + (Math.random() - 0.5) * 2;
+                    targetY = origins[idx + 1] + (Math.random() - 0.5) * 2;
+                    targetZ = origins[idx + 2] + (Math.random() - 0.5) * 2;
+                }
+
+                // Lerp to target
+                positionsArray[idx] += (targetX - positionsArray[idx]) * 0.02;
+                positionsArray[idx + 1] += (targetY - positionsArray[idx + 1]) * 0.02;
+                positionsArray[idx + 2] += (targetZ - positionsArray[idx + 2]) * 0.02;
+            }
+
+            geometry.attributes.position.needsUpdate = true;
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
